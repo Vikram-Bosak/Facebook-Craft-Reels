@@ -31,3 +31,6 @@ test/
 *.mp4
 *.wav
 *.mp3
+
+# Model assets
+assets/kokoro/

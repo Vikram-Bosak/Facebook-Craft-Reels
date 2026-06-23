@@ -6,7 +6,7 @@ try:
     from .database import is_duplicate, insert_media, update_reel_metadata, mark_reel_uploaded, mark_reel_failed, get_reel_status, increment_attempts, reset_attempts
     from .seo_generator import generate_seo_metadata, format_caption
     from .facebook_uploader import upload_reel, upload_photo
-    from .telegram_reporter import report_success, report_failure
+    from .telegram_reporter import report_success, report_failure, report_progress
     from .drive_reader import get_next_media, move_file, count_pending_media
     from .logger import logger
     from .translator import translate_video
@@ -14,7 +14,7 @@ except ImportError:
     from database import is_duplicate, insert_media, update_reel_metadata, mark_reel_uploaded, mark_reel_failed, get_reel_status, increment_attempts, reset_attempts
     from seo_generator import generate_seo_metadata, format_caption
     from facebook_uploader import upload_reel, upload_photo
-    from telegram_reporter import report_success, report_failure
+    from telegram_reporter import report_success, report_failure, report_progress
     from drive_reader import get_next_media, move_file, count_pending_media
     from logger import logger
     from translator import translate_video
@@ -118,6 +118,7 @@ def process_next_media(media_type='reel'):
             
         # AI SEO Generation
         logger.info("Generating SEO metadata via OpenAI...")
+        report_progress("SEO Generation", f"Generating English title/hashtags for: {filename}")
         seo = generate_seo_metadata(filename, media_type)
         caption = format_caption(seo)
         update_reel_metadata(filename, seo['title'], seo['description'], seo['hashtags'])
@@ -128,6 +129,7 @@ def process_next_media(media_type='reel'):
         
         if translate_enabled and media_type == 'reel':
             logger.info("Translating Chinese video to English...")
+            report_progress("Translation & Dubbing", f"Dubbing '{filename}' to English with Lip-Sync aligned OpenAI TTS...")
             try:
                 output_dir = os.path.join(os.path.dirname(filepath), 'translated')
                 os.makedirs(output_dir, exist_ok=True)
@@ -149,6 +151,7 @@ def process_next_media(media_type='reel'):
         
         # Facebook Upload with Retries
         logger.info(f"Uploading to Facebook {media_type}s...")
+        report_progress("Uploading", f"Uploading '{seo.get('title', filename)}' to Facebook Page...")
         max_retries = 3
         retry_delays = [60, 300, 900] # 1 min, 5 min, 15 min
         fb_url = None

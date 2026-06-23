@@ -227,45 +227,13 @@ def _create_translation_batches(segments, max_chars=2000):
 
 
 def _translate_batch(texts):
-    """Translate a batch of Chinese texts to English using free Google Translate."""
-    try:
-        # === FREE OPTION: Google Translate via deep-translator ===
-        from deep_translator import GoogleTranslator
-        
-        translator = GoogleTranslator(source='zh-CN', target='en')
-        
-        translations = []
-        for text in texts:
-            if not text.strip():
-                translations.append(text)
-                continue
-            try:
-                translated = translator.translate(text)
-                translations.append(translated if translated else text)
-            except Exception as e:
-                logger.warning(f"Translation failed for segment: {e}")
-                translations.append(text)
-        
-        logger.info(f"Translated {len(translations)} segments via Google Translate (free)")
-        return translations
-
-    except ImportError:
-        logger.error("deep-translator not installed. Run: pip install deep-translator")
-        return texts
-    except Exception as e:
-        logger.error(f"Free translation error: {e}")
-        
-        # === PAID FALLBACK: OpenAI API ===
+    """Translate a batch of Chinese texts to English using OpenAI GPT (preferred) or free Google Translate fallback."""
+    api_key = os.environ.get('OPENAI_API_KEY')
+    if api_key:
         try:
             from openai import OpenAI
-
-            api_key = os.environ.get('OPENAI_API_KEY')
-            if not api_key:
-                logger.warning("No translation API available, returning original texts")
-                return texts
-
             base_url = os.environ.get('OPENAI_API_BASE_URL')
-            model = os.environ.get('OPENAI_API_MODEL', 'gpt-3.5-turbo')
+            model = os.environ.get('OPENAI_API_MODEL', 'gpt-4o-mini')
 
             if base_url:
                 client = OpenAI(api_key=api_key, base_url=base_url)
@@ -275,10 +243,11 @@ def _translate_batch(texts):
             numbered_texts = "\n".join([f"{i+1}. {t}" for i, t in enumerate(texts)])
 
             system_prompt = (
-                "You are a professional Chinese to English translator. "
-                "Translate the following Chinese text segments into natural, fluent English. "
-                "Keep translations concise and suitable for social media subtitles. "
-                "Return ONLY the translations, one per line, numbered to match the input."
+                "You are an expert translator specializing in translating viral Chinese social media videos (reels/shorts) to English for a US audience. "
+                "Translate the following segments into highly natural, engaging, and colloquial English. "
+                "Preserve the emotional tone, humor, and drama of the original speaker. "
+                "Ensure the translation is concise so that it can be spoken in a similar duration as the original Chinese segment. "
+                "Return ONLY the translations, one per line, numbered to match the input format."
             )
 
             user_prompt = f"Translate these Chinese segments to English:\n\n{numbered_texts}"
@@ -307,26 +276,151 @@ def _translate_batch(texts):
             while len(translations) < len(texts):
                 translations.append(texts[len(translations)])
 
+            logger.info(f"Translated {len(translations)} segments via OpenAI API")
             return translations[:len(texts)]
+        except Exception as e:
+            logger.error(f"OpenAI translation failed: {e}. Falling back to Google Translate.")
 
-        except Exception as e2:
-            logger.error(f"OpenAI translation also failed: {e2}")
-            return texts
+    # Fallback to Google Translate
+    try:
+        from deep_translator import GoogleTranslator
+        translator = GoogleTranslator(source='zh-CN', target='en')
+        translations = []
+        for text in texts:
+            if not text.strip():
+                translations.append(text)
+                continue
+            try:
+                translated = translator.translate(text)
+                translations.append(translated if translated else text)
+            except Exception as e:
+                logger.warning(f"Translation failed for segment: {e}")
+                translations.append(text)
+        logger.info(f"Translated {len(translations)} segments via Google Translate (free)")
+        return translations
+    except ImportError:
+        logger.error("deep-translator not installed. Run: pip install deep-translator")
+        return texts
+    except Exception as e:
+        logger.error(f"Free translation error: {e}")
+        return texts
 
 
 # ============================================================
-# STEP 4: Generate English TTS Audio (edge-tts)
+# STEP 4: Generate English TTS Audio (OpenAI TTS & Segment Alignment)
 # ============================================================
 
-def generate_english_tts(segments, output_audio_path=None):
+def get_audio_duration(path):
+    """Get the duration of an audio file using ffprobe."""
+    try:
+        cmd = [
+            'ffprobe', '-v', 'error',
+            '-show_entries', 'format=duration',
+            '-of', 'csv=p=0',
+            path
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        return float(res.stdout.strip())
+    except Exception as e:
+        logger.error(f"Error getting audio duration for {path}: {e}")
+        return 0.0
+
+_kokoro_instance = None
+
+def get_kokoro():
+    global _kokoro_instance
+    if _kokoro_instance is None:
+        try:
+            import sys
+            user_site = os.path.expanduser('~/.local/lib/python3.12/site-packages')
+            if user_site not in sys.path:
+                sys.path.append(user_site)
+            from kokoro_onnx import Kokoro
+            # Look in assets/kokoro relative to project root
+            # Project root is parent of src directory
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            model_path = os.path.join(base_dir, 'assets', 'kokoro', 'kokoro-v1.0.onnx')
+            voices_path = os.path.join(base_dir, 'assets', 'kokoro', 'voices-v1.0.bin')
+            if not os.path.exists(model_path):
+                model_path = 'assets/kokoro/kokoro-v1.0.onnx'
+                voices_path = 'assets/kokoro/voices-v1.0.bin'
+                
+            if os.path.exists(model_path) and os.path.exists(voices_path):
+                logger.info(f"Initializing Kokoro ONNX model from {model_path}...")
+                _kokoro_instance = Kokoro(model_path, voices_path)
+            else:
+                logger.warning(f"Kokoro model files not found at {model_path}. Fallback to edge-tts.")
+        except Exception as e:
+            logger.error(f"Failed to load Kokoro: {e}")
+    return _kokoro_instance
+
+def generate_segment_tts(text, voice, output_path):
+    """Generate a single TTS audio chunk using OpenAI TTS (preferred), Kokoro ONNX (realistic open-source), or edge-tts."""
+    api_key = os.environ.get('OPENAI_API_KEY')
+    if api_key:
+        try:
+            from openai import OpenAI
+            client = OpenAI(api_key=api_key)
+            openai_voice = 'onyx'  # Default narrator voice
+            voice_lower = voice.lower()
+            if 'christopher' in voice_lower or 'guy' in voice_lower or 'eric' in voice_lower or 'male' in voice_lower:
+                openai_voice = 'onyx'
+            elif 'samantha' in voice_lower or 'jenny' in voice_lower or 'aria' in voice_lower or 'female' in voice_lower:
+                openai_voice = 'nova'
+            elif voice in ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']:
+                openai_voice = voice
+            
+            # Request audio generation
+            response = client.audio.speech.create(
+                model="tts-1",
+                voice=openai_voice,
+                input=text
+            )
+            response.stream_to_file(output_path)
+            return True
+        except Exception as e:
+            logger.error(f"OpenAI TTS failed: {e}. Falling back.")
+    
+    # Try Kokoro ONNX
+    try:
+        kokoro = get_kokoro()
+        if kokoro:
+            kokoro_voice = "af_sarah"  # Default female
+            voice_lower = voice.lower()
+            if 'guy' in voice_lower or 'male' in voice_lower or 'christopher' in voice_lower or 'george' in voice_lower:
+                kokoro_voice = "bm_george"  # Default male
+            elif 'bella' in voice_lower:
+                kokoro_voice = "af_bella"
+            elif 'heart' in voice_lower:
+                kokoro_voice = "af_heart"
+            elif 'michael' in voice_lower:
+                kokoro_voice = "am_michael"
+            elif 'nicole' in voice_lower or 'emma' in voice_lower:
+                kokoro_voice = "bf_emma"
+            elif voice.startswith("af_") or voice.startswith("am_") or voice.startswith("bf_") or voice.startswith("bm_"):
+                kokoro_voice = voice
+                
+            samples, sample_rate = kokoro.create(text, voice=kokoro_voice, speed=1.0, lang="en-us")
+            import soundfile as sf
+            sf.write(output_path, samples, sample_rate)
+            return True
+    except Exception as e:
+        logger.error(f"Kokoro TTS generation failed: {e}. Falling back to edge-tts.")
+        
+    # Fallback to edge-tts
+    try:
+        import edge_tts
+        import asyncio
+        asyncio.run(edge_tts.Communicate(text, voice).save(output_path))
+        return True
+    except Exception as e:
+        logger.error(f"Fallback edge-tts failed for text '{text}': {e}")
+        return False
+
+def generate_english_tts(segments, output_audio_path=None, video_path=None):
     """
-    Generate English TTS audio from translated segments using edge-tts.
-
-    Args:
-        segments: List of {'start': float, 'end': float, 'english': str}
-
-    Returns:
-        Path to generated TTS audio file (MP3)
+    Generate English TTS audio from translated segments and align them to the video timeline.
+    Speed factor is adjusted dynamically per-segment to fit the original segment duration.
     """
     if not segments:
         return None
@@ -334,184 +428,219 @@ def generate_english_tts(segments, output_audio_path=None):
     if output_audio_path is None:
         output_audio_path = os.path.join(tempfile.gettempdir(), "tts_output.mp3")
 
-    logger.info(f"Generating English TTS for {len(segments)} segments...")
+    logger.info(f"Generating and aligning English TTS for {len(segments)} segments...")
+
+    # Calculate total duration needed
+    total_duration = 60.0
+    if video_path:
+        try:
+            probe_cmd = [
+                'ffprobe', '-v', 'error',
+                '-show_entries', 'format=duration',
+                '-of', 'csv=p=0',
+                video_path
+            ]
+            result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=10)
+            total_duration = float(result.stdout.strip())
+        except Exception as e:
+            logger.warning(f"Could not read video duration: {e}. Defaulting to max segment end.")
+            total_duration = max(s['end'] for s in segments) + 1.0
+    else:
+        total_duration = max(s['end'] for s in segments) + 1.0
+
+    voice = os.environ.get('TTS_VOICE', 'en-US-ChristopherNeural')
+    temp_dir = tempfile.gettempdir()
+    
+    # Step 1: Create silent base audio track
+    silent_base = os.path.join(temp_dir, "silent_base.wav")
+    try:
+        subprocess.run([
+            'ffmpeg', '-y', '-f', 'lavfi', 
+            '-i', 'anullsrc=r=44100:cl=stereo', 
+            '-t', str(total_duration), 
+            silent_base
+        ], capture_output=True, check=True)
+    except Exception as e:
+        logger.error(f"Failed to generate silent base audio: {e}")
+        return None
+
+    # Step 2: Generate and adjust each segment
+    adjusted_segments = []
+    inputs = ['-i', silent_base]
+    filter_complex_parts = []
+    
+    for idx, seg in enumerate(segments):
+        text = seg.get('english', '').strip()
+        if not text:
+            continue
+        
+        start = seg['start']
+        end = seg['end']
+        target_dur = end - start
+        if target_dur <= 0:
+            continue
+
+        temp_seg_raw = os.path.join(temp_dir, f"seg_raw_{idx}.mp3")
+        if generate_segment_tts(text, voice, temp_seg_raw):
+            actual_dur = get_audio_duration(temp_seg_raw)
+            if actual_dur <= 0:
+                continue
+
+            temp_seg_final = temp_seg_raw
+            
+            # If the generated speech is longer than the original segment duration, speed it up
+            if actual_dur > target_dur:
+                speed = actual_dur / target_dur
+                logger.info(f"Segment {idx} is too slow ({actual_dur:.2f}s > {target_dur:.2f}s). Speeding up by {speed:.2f}x")
+                
+                # Cap speed at a reasonable limit (e.g. 1.2x) to prevent robotic/unnatural audio
+                speed = min(speed, 1.2)
+                
+                # Chain atempo filters if speed > 2.0
+                if speed > 2.0:
+                    filters = ["atempo=2.0", f"atempo={speed/2.0:.4f}"]
+                else:
+                    filters = [f"atempo={speed:.4f}"]
+                
+                temp_seg_speed = os.path.join(temp_dir, f"seg_speed_{idx}.wav")
+                try:
+                    subprocess.run([
+                        'ffmpeg', '-y', '-i', temp_seg_raw,
+                        '-filter:a', ",".join(filters),
+                        temp_seg_speed
+                    ], capture_output=True, check=True)
+                    temp_seg_final = temp_seg_speed
+                except Exception as e:
+                    logger.error(f"Failed to speed up segment {idx}: {e}")
+
+            # Add to input list and prepare adelay filter
+            input_idx = len(inputs) // 2  # This corresponds to the input index of this file in FFmpeg
+            inputs.extend(['-i', temp_seg_final])
+            
+            delay_ms = int(start * 1000)
+            # Use adelay filter for stereo audio (delaying both left and right channels)
+            filter_complex_parts.append(f"[{input_idx}:a]adelay={delay_ms}|{delay_ms}[a{input_idx}]")
+            adjusted_segments.append(f"[a{input_idx}]")
+
+    if not adjusted_segments:
+        logger.warning("No valid TTS segments were generated.")
+        return silent_base
+
+    # Step 3: Mix all delayed segments together on top of the silent base
+    mix_inputs = "".join(adjusted_segments)
+    filter_graph = ";".join(filter_complex_parts)
+    filter_graph += f";[0:a]{mix_inputs}amix=inputs={len(adjusted_segments)+1}:duration=first:dropout_transition=0:normalize=0[outa]"
+
+    cmd = ['ffmpeg', '-y'] + inputs + [
+        '-filter_complex', filter_graph,
+        '-map', '[outa]',
+        '-ar', '44100',
+        '-ac', '2',
+        output_audio_path
+    ]
 
     try:
-        import edge_tts
-        import asyncio
-
-        # Filter out empty segments
-        valid_segments = [s for s in segments if s.get('english', '').strip()]
-
-        if not valid_segments:
-            logger.warning("No valid segments for TTS")
-            return None
-
-        # Create SRT content for TTS timing
-        srt_content = _segments_to_srt(valid_segments)
-
-        # Generate TTS using edge-tts
-        voice = os.environ.get('TTS_VOICE', 'en-US-ChristopherNeural')
-
-        asyncio.run(_generate_edge_tts(valid_segments, output_audio_path, voice))
-
-        if os.path.exists(output_audio_path) and os.path.getsize(output_audio_path) > 0:
-            logger.info(f"TTS audio generated: {output_audio_path}")
-            return output_audio_path
-        else:
-            logger.error("TTS output file is empty or missing")
-            return None
-
-    except ImportError:
-        logger.error("edge-tts not installed. Run: pip install edge-tts")
+        logger.info("Mixing audio segments into final aligned audio track...")
+        subprocess.run(cmd, capture_output=True, check=True)
+        return output_audio_path
+    except subprocess.CalledProcessError as e:
+        logger.error(f"FFmpeg mixing failed: {e.stderr.decode('utf-8', errors='ignore')}")
         return None
-    except Exception as e:
-        logger.error(f"TTS generation error: {e}")
-        return None
-
-
-async def _generate_edge_tts(segments, output_path, voice):
-    """Generate TTS audio using edge-tts."""
-    import edge_tts
-
-    # Combine all English text with pauses
-    full_text = ""
-    for seg in segments:
-        text = seg.get('english', '').strip()
-        if text:
-            full_text += text + ". "
-
-    # Generate audio
-    communicate = edge_tts.Communicate(full_text, voice)
-    await communicate.save(output_path)
-
-
-def _segments_to_srt(segments):
-    """Convert segments to SRT subtitle format."""
-    srt_lines = []
-    for i, seg in enumerate(segments, 1):
-        start = _format_srt_time(seg['start'])
-        end = _format_srt_time(seg['end'])
-        text = seg.get('english', seg.get('text', ''))
-        srt_lines.append(f"{i}\n{start} --> {end}\n{text}\n")
-    return "\n".join(srt_lines)
-
-
-def _format_srt_time(seconds):
-    """Convert seconds to SRT time format (HH:MM:SS,mmm)."""
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
-    millis = int((seconds % 1) * 1000)
-    return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
 
 # ============================================================
 # STEP 5: Merge Translated Audio with Original Video
 # ============================================================
 
-def merge_audio_with_video(video_path, audio_path, output_path=None):
+def separate_vocals(audio_path, output_dir):
     """
-    Mix original background audio with translated English TTS voice.
-    Original audio volume lowered, English voice overlaid on top.
+    Runs Demucs on the audio file to separate vocals from background music/effects.
+    Returns path to the background (no vocals) audio file.
+    """
+    logger.info("Running Demucs vocal separator on audio...")
+    try:
+        import sys
+        user_site = os.path.expanduser('~/.local/lib/python3.12/site-packages')
+        if user_site not in sys.path:
+            sys.path.append(user_site)
+        
+        # Run Demucs using the local CLI command directly
+        demucs_executable = os.path.expanduser('~/.local/bin/demucs')
+        if not os.path.exists(demucs_executable):
+            demucs_executable = 'demucs' # Fallback to path
+            
+        cmd = [
+            demucs_executable,
+            '--two-stems=vocals',
+            '-o', output_dir,
+            audio_path
+        ]
+        
+        logger.info(f"Executing: {' '.join(cmd)}")
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        
+        if result.returncode != 0:
+            logger.error(f"Demucs separation failed: {result.stderr}")
+            return None
+            
+        base_name = os.path.splitext(os.path.basename(audio_path))[0]
+        bg_audio_path = os.path.join(output_dir, 'htdemucs', base_name, 'no_vocals.wav')
+        
+        if os.path.exists(bg_audio_path):
+            logger.info(f"Vocals successfully separated. Background audio: {bg_audio_path}")
+            return bg_audio_path
+        else:
+            logger.error(f"Demucs finished but output file not found at: {bg_audio_path}")
+            return None
+            
+    except Exception as e:
+        logger.error(f"Error running Demucs separation: {e}")
+        return None
 
-    Args:
-        video_path: Original video file
-        audio_path: New English TTS audio file
-        output_path: Output video path
 
-    Returns:
-        Path to output video with mixed audio
+def merge_audio_with_video(video_path, audio_path, bg_music_path=None, output_path=None):
+    """
+    Mix original background audio (with vocals removed) with translated English TTS voice.
     """
     if output_path is None:
         base, ext = os.path.splitext(video_path)
         output_path = f"{base}_english{ext}"
 
-    logger.info(f"Merging translated audio with video (keeping original background)...")
+    logger.info(f"Merging translated audio with video...")
 
     try:
-        # Get original video duration
-        probe_cmd = [
-            'ffprobe', '-v', 'error',
-            '-show_entries', 'format=duration',
-            '-of', 'csv=p=0',
-            video_path
-        ]
-        result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=30)
-        original_duration = float(result.stdout.strip()) if result.stdout.strip() else 60
-
-        # Get TTS audio duration
-        probe_cmd2 = [
-            'ffprobe', '-v', 'error',
-            '-show_entries', 'format=duration',
-            '-of', 'csv=p=0',
-            audio_path
-        ]
-        result2 = subprocess.run(probe_cmd2, capture_output=True, text=True, timeout=30)
-        tts_duration = float(result2.stdout.strip()) if result2.stdout.strip() else 0
-
-        logger.info(f"Video duration: {original_duration:.1f}s, TTS duration: {tts_duration:.1f}s")
-
-        # Step 1: Extract original audio and lower volume (background music)
-        original_audio = os.path.join(tempfile.gettempdir(), "original_bg.wav")
-        extract_cmd = [
-            'ffmpeg', '-y',
-            '-i', video_path,
-            '-vn',
-            '-af', 'volume=0.25',   # Lower original volume to 25% (background)
-            '-ar', '44100',
-            '-ac', '2',
-            original_audio
-        ]
-        subprocess.run(extract_cmd, capture_output=True, text=True, timeout=60)
-
-        # Step 2: Prepare TTS audio (pad with silence if needed, set volume)
-        tts_audio = os.path.join(tempfile.gettempdir(), "tts_prepared.wav")
-        tts_cmd = [
-            'ffmpeg', '-y',
-            '-i', audio_path,
-            '-af', f'volume=1.5,apad=whole_dur={original_duration}',
-            '-ar', '44100',
-            '-ac', '2',
-            tts_audio
-        ]
-        subprocess.run(tts_cmd, capture_output=True, text=True, timeout=60)
-
-        # Step 3: Mix original background + English TTS voice
-        mixed_audio = os.path.join(tempfile.gettempdir(), "mixed_audio.wav")
-        mix_cmd = [
-            'ffmpeg', '-y',
-            '-i', original_audio,   # Background music (25% volume)
-            '-i', tts_audio,        # English voice (100% volume)
-            '-filter_complex',
-            '[0:a][1:a]amix=inputs=2:duration=first:dropout_transition=0',
-            '-ar', '44100',
-            '-ac', '2',
-            mixed_audio
-        ]
-        subprocess.run(mix_cmd, capture_output=True, text=True, timeout=60)
-
-        # Step 4: Merge mixed audio with video
-        cmd = [
-            'ffmpeg', '-y',
-            '-i', video_path,      # Original video
-            '-i', mixed_audio,     # Mixed audio (background + English voice)
-            '-c:v', 'copy',        # Copy video stream (no re-encode)
-            '-c:a', 'aac',         # Encode audio as AAC
-            '-b:a', '192k',        # Higher audio bitrate
-            '-map', '0:v:0',       # Use video from first input
-            '-map', '1:a:0',       # Use mixed audio
-            '-t', str(original_duration),  # Limit to original duration
-            '-shortest',           # Trim to shortest stream
-            output_path
-        ]
+        if bg_music_path and os.path.exists(bg_music_path):
+            logger.info("Mixing separated background music (no vocals) with English dubbed voice...")
+            # We mix BGM (bg_music_path) at 90% volume and English voice (audio_path) at 100% volume
+            cmd = [
+                'ffmpeg', '-y',
+                '-i', video_path,
+                '-i', bg_music_path,
+                '-i', audio_path,
+                '-filter_complex', '[1:a]volume=0.9[bg];[2:a]volume=1.0[fg];[bg][fg]amix=inputs=2:duration=first:dropout_transition=0[outa]',
+                '-map', '0:v:0',
+                '-map', '[outa]',
+                '-c:v', 'copy',
+                '-c:a', 'aac',
+                '-b:a', '192k',
+                output_path
+            ]
+        else:
+            logger.info("No background music path provided. Mapping English voice directly.")
+            # Discard the original background audio entirely
+            cmd = [
+                'ffmpeg', '-y',
+                '-i', video_path,
+                '-i', audio_path,
+                '-map', '0:v:0',
+                '-map', '1:a',
+                '-c:v', 'copy',
+                '-c:a', 'aac',
+                '-b:a', '192k',
+                output_path
+            ]
 
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-
-        # Cleanup temp files
-        for f in [original_audio, tts_audio, mixed_audio]:
-            if os.path.exists(f):
-                os.remove(f)
 
         if result.returncode != 0:
             logger.error(f"FFmpeg merge failed: {result.stderr}")
@@ -524,6 +653,59 @@ def merge_audio_with_video(video_path, audio_path, output_path=None):
         logger.error(f"Error merging audio: {e}")
         return None
 
+
+
+
+def overlay_on_template_3_4(video_path, output_path):
+    """
+    Crops the input vertical video to the aspect ratio of the 3:4 frame content box,
+    scales it to 651x838, and overlays it onto the template assets/template_3_4.jpg
+    at coordinates x=57, y=109.
+    """
+    logger.info("Applying 3:4 template overlay to video...")
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    template_path = os.path.join(base_dir, 'assets', 'template_3_4.jpg')
+    if not os.path.exists(template_path):
+        template_path = 'assets/template_3_4.jpg'
+        
+    if not os.path.exists(template_path):
+        logger.error(f"Template image not found at {template_path}. Skipping overlay.")
+        return video_path
+
+    try:
+        # We crop the vertical video dynamically to match the aspect ratio of the new content box (716x926),
+        # then scale it to 716x926, and overlay it on the template image (scaled to 746x1024) at 14:82
+        cmd = [
+            'ffmpeg', '-y',
+            '-i', template_path,
+            '-i', video_path,
+            '-filter_complex', '[0:v]scale=746:1024[tmp];[1:v]crop=iw:iw*926/716,scale=716:926[vid];[tmp][vid]overlay=14:82[outv]',
+            '-map', '[outv]',
+            '-map', '1:a',
+            '-c:v', 'libx264',
+            '-c:a', 'copy',
+            output_path
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        if result.returncode != 0:
+            logger.error(f"FFmpeg template overlay failed: {result.stderr}")
+            return video_path
+            
+        logger.info(f"Video successfully overlaid on template: {output_path}")
+        return output_path
+    except Exception as e:
+        logger.error(f"Error during template overlay: {e}")
+        return video_path
+
+
+def _format_srt_time(seconds):
+    """Convert seconds to SRT time format (HH:MM:SS,mmm)."""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    millis = int((seconds % 1) * 1000)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
 # ============================================================
 # STEP 6: Generate Subtitle Files (SRT)
@@ -604,13 +786,21 @@ def burn_subtitles_into_video(video_path, srt_path, output_path=None, language='
     logger.info(f"Burning {language} subtitles into video...")
 
     try:
+        # Adjust MarginV dynamically to place subtitles inside the video content box if template is present
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        template_path = os.path.join(base_dir, 'assets', 'template_3_4.jpg')
+        is_templated = os.path.exists(template_path) or os.path.exists('assets/template_3_4.jpg')
+        
+        margin_v = "80" if is_templated else "60"
+        margin_v_dual = "70" if is_templated else "50"
+
         # Subtitle style based on language
         if language == 'chinese':
-            style = "FontName=Noto Sans SC,FontSize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=1,Alignment=2,MarginV=60"
+            style = f"FontName=Noto Sans SC,FontSize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=1,Alignment=2,MarginV={margin_v}"
         elif language == 'dual':
-            style = "FontName=Noto Sans SC,FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=1,Alignment=2,MarginV=50"
+            style = f"FontName=Noto Sans SC,FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=1,Alignment=2,MarginV={margin_v_dual}"
         else:  # english
-            style = "FontName=Arial,FontSize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=1,Alignment=2,MarginV=60"
+            style = f"FontName=Arial,FontSize=16,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=1,Alignment=2,MarginV={margin_v}"
 
         # Escape path for FFmpeg subtitle filter
         escaped_srt = srt_path.replace('\\', '/').replace(':', '\\:')
@@ -635,6 +825,47 @@ def burn_subtitles_into_video(video_path, srt_path, output_path=None, language='
     except Exception as e:
         logger.error(f"Error burning subtitles: {e}")
         return None
+
+
+
+def trim_video_to_59s(video_path, output_dir):
+    """Trims video to 59 seconds if it is longer."""
+    try:
+        # Check duration using ffprobe
+        cmd = [
+            'ffprobe', '-v', 'error',
+            '-show_entries', 'format=duration',
+            '-of', 'csv=p=0',
+            video_path
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        duration = float(res.stdout.strip())
+        
+        if duration > 59.0:
+            logger.info(f"Video is {duration:.2f}s long. Trimming to 59s...")
+            base = os.path.basename(video_path)
+            trimmed_path = os.path.join(output_dir, f"trimmed_59s_{base}")
+            
+            # Trim using ffmpeg (re-encode to avoid keyframe issues)
+            trim_cmd = [
+                'ffmpeg', '-y',
+                '-i', video_path,
+                '-ss', '0',
+                '-t', '59',
+                '-c:v', 'libx264',
+                '-c:a', 'aac',
+                '-crf', '18',
+                trimmed_path
+            ]
+            subprocess.run(trim_cmd, capture_output=True, check=True, timeout=300)
+            logger.info(f"Video trimmed successfully: {trimmed_path}")
+            return trimmed_path
+        else:
+            logger.info(f"Video is {duration:.2f}s long. No trimming needed.")
+            return video_path
+    except Exception as e:
+        logger.error(f"Error trimming video: {e}")
+        return video_path
 
 
 # ============================================================
@@ -662,8 +893,14 @@ def translate_video(video_path, output_dir=None, burn_subtitles=True, subtitle_l
 
     os.makedirs(output_dir, exist_ok=True)
 
+    # Trim video to 59 seconds if needed
+    original_video_path = video_path
+    video_path = trim_video_to_59s(video_path, output_dir)
+
     # Track all generated files for cleanup
     temp_files = []
+    if video_path != original_video_path:
+        temp_files.append(video_path)
 
     try:
         # Step 1: Extract audio
@@ -672,6 +909,11 @@ def translate_video(video_path, output_dir=None, burn_subtitles=True, subtitle_l
         if not audio_path:
             raise Exception("Failed to extract audio from video")
         temp_files.append(audio_path)
+
+        # Separate vocals from BGM/effects using Demucs
+        bg_music_path = separate_vocals(audio_path, output_dir)
+        if bg_music_path:
+            temp_files.append(bg_music_path)
 
         # Step 2: Transcribe Chinese
         logger.info("Step 2/6: Transcribing Chinese audio...")
@@ -690,18 +932,25 @@ def translate_video(video_path, output_dir=None, burn_subtitles=True, subtitle_l
         # Step 4: Generate English TTS
         logger.info("Step 4/6: Generating English TTS...")
         tts_path = os.path.join(output_dir, "tts_english.mp3")
-        tts_audio = generate_english_tts(translated, tts_path)
+        tts_audio = generate_english_tts(translated, tts_path, video_path=video_path)
         if not tts_audio:
             raise Exception("Failed to generate TTS audio")
         temp_files.append(tts_audio)
 
         # Step 5: Merge audio
         logger.info("Step 5/6: Merging translated audio with video...")
-        english_video = merge_audio_with_video(video_path, tts_audio, 
-            os.path.join(output_dir, "video_english.mp4"))
+        english_video = merge_audio_with_video(video_path, tts_audio, bg_music_path=bg_music_path,
+            output_path=os.path.join(output_dir, "video_english.mp4"))
         if not english_video:
             raise Exception("Failed to merge audio with video")
         temp_files.append(english_video)
+
+        # Apply 3:4 template overlay if template exists
+        template_video_path = os.path.join(output_dir, "video_english_3_4.mp4")
+        overlaid_video = overlay_on_template_3_4(english_video, template_video_path)
+        if overlaid_video != english_video:
+            english_video = overlaid_video
+            temp_files.append(english_video)
 
         # Step 6: Generate subtitles
         logger.info("Step 6/6: Generating subtitles...")
