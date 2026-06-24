@@ -10,6 +10,9 @@ Pipeline:
 6. Generate SRT subtitles (Chinese + English)
 """
 
+import sys
+sys.modules['coverage'] = None
+
 import os
 import json
 import subprocess
@@ -21,6 +24,7 @@ try:
     from .logger import logger
 except ImportError:
     from logger import logger
+
 
 
 # ============================================================
@@ -679,7 +683,7 @@ def overlay_on_template_3_4(video_path, output_path):
             'ffmpeg', '-y',
             '-i', template_path,
             '-i', video_path,
-            '-filter_complex', '[0:v]scale=746:1024[tmp];[1:v]crop=iw:iw*926/716,scale=716:926[vid];[tmp][vid]overlay=14:82[outv]',
+            '-filter_complex', '[0:v]scale=746:1024[tmp];[1:v]crop=w=\'min(iw,ih*716/926)\':h=\'min(ih,iw*926/716)\',scale=716:926[vid];[tmp][vid]overlay=14:82[outv]',
             '-map', '[outv]',
             '-map', '1:a',
             '-c:v', 'libx264',

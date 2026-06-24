@@ -75,4 +75,34 @@ def run_upload(video_data):
     return video_data
 
 if __name__ == "__main__":
-    pass
+    # Standalone running: load state from workspace/video_data.json
+    import json
+    state_file = "workspace/video_data.json"
+    report_file = "workspace/report.json"
+    
+    if os.path.exists(state_file):
+        with open(state_file, "r") as f:
+            video_data = json.load(f)
+            
+        updated_data = run_upload(video_data)
+        
+        with open(state_file, "w") as f:
+            json.dump(updated_data, f, indent=2)
+            
+        # Update report.json as well
+        if os.path.exists(report_file):
+            with open(report_file, "r") as f:
+                report = json.load(f)
+        else:
+            report = {}
+        report["upload_status"] = updated_data.get("upload_status", "Failed")
+        report["description"] = updated_data.get("description", "N/A")
+        report["facebook_url"] = updated_data.get("fb_url", "N/A")
+        report["youtube_url"] = updated_data.get("yt_url", "N/A")
+        with open(report_file, "w") as f:
+            json.dump(report, f, indent=2)
+            
+        print(f"Uploader finished. Upload status: {updated_data.get('upload_status')}")
+    else:
+        print("No active video_data.json found. Skipping uploader.")
+

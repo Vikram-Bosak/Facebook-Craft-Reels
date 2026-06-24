@@ -109,9 +109,38 @@ def main():
             
         logger.info("E2E translation and rendering completed successfully!")
         
+        # Write state to workspace/video_data.json and report.json for agent_3_uploader
+        os.makedirs("workspace", exist_ok=True)
+        final_video_path = os.path.abspath("output_dubbed_reel.mp4")
+        
+        # Create a basic headline for uploader SEO description
+        headline_text = title
+        video_data_state = {
+            "id": video_id,
+            "title": title,
+            "seo_title": headline_text,
+            "source_url": source_url,
+            "local_path": os.path.abspath("workspace/raw_video.mp4"),
+            "edited_path": final_video_path,
+            "editing_status": "Success"
+        }
+        with open("workspace/video_data.json", "w") as f:
+            json.dump(video_data_state, f, indent=2)
+            
+        report_data = {
+            "video_name": title,
+            "download_status": "Success",
+            "editing_status": "Success",
+            "upload_status": "PENDING",
+            "seo_title": headline_text,
+            "description": "N/A",
+            "facebook_url": "N/A",
+            "youtube_url": "N/A"
+        }
+        with open("workspace/report.json", "w") as f:
+            json.dump(report_data, f, indent=2)
+
         # 4. Upload Step (Call agent 3 uploader or simulate it)
-        # Note: If FB_ACCESS_TOKEN and FB_PAGE_ID are active, we can run agent_3_uploader
-        # Otherwise we copy to output and log success.
         fb_url = "https://facebook.com/watch/mock_reel_url"
         uploader_script = os.path.join(os.path.dirname(__file__), 'agent_3_uploader.py')
         if os.path.exists(uploader_script):
@@ -121,6 +150,13 @@ def main():
                 upload_res = subprocess.run([python_exe, uploader_script], capture_output=True, text=True, timeout=300)
                 if upload_res.returncode == 0:
                     logger.info("Agent 3 uploaded successfully.")
+                    # Read updated fb_url from video_data.json
+                    try:
+                        with open("workspace/video_data.json", "r") as f:
+                            updated_data = json.load(f)
+                            fb_url = updated_data.get("fb_url", fb_url)
+                    except Exception as json_err:
+                        logger.warning(f"Could not read fb_url from video_data.json: {json_err}")
                 else:
                     logger.warning(f"Agent 3 upload warning: {upload_res.stderr}")
             except Exception as e:

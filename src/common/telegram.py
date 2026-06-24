@@ -151,11 +151,11 @@ def get_run_details() -> str:
     return f"<b>Run ID:</b> {run_id}\n<b>Workflow:</b> {workflow}\n<b>Time:</b> {current_time}"
 
 def report_download_start():
-    msg = f"🟢 <b>Hollywood Download Started</b>\n{get_run_details()}"
+    msg = f"🟢 <b>Chinese Reel Download Started</b>\n{get_run_details()}"
     send_message(msg)
 
 def report_download_complete(source_url: str):
-    msg = f"✅ <b>Hollywood Download Completed</b>\n<b>Source:</b> {source_url}\n{get_run_details()}"
+    msg = f"✅ <b>Chinese Reel Download Completed</b>\n<b>Source:</b> {source_url}\n{get_run_details()}"
     send_message(msg)
 
 def report_edit_start():
@@ -188,12 +188,12 @@ def report_final_summary(summary_data: dict):
     fb_status = "Success" if fb_url not in ["Failed", "N/A"] else f"Failed ({fb_err})"
     yt_status = "Success" if yt_url not in ["Failed", "N/A"] else f"Failed ({yt_err})"
     
-    title = summary_data.get('title', 'Automated Hollywood Reel')
+    title = summary_data.get('title', 'Automated Chinese Reel')
     description = summary_data.get('description', '')
     original_file = summary_data.get('original_file', 'unknown_video.mp4')
     
     run_id = os.environ.get("GITHUB_RUN_ID", "")
-    repo_name = os.environ.get("GITHUB_REPOSITORY", "Vikram-Bosak/Facebook-Viral-Hollywood-Reels")
+    repo_name = os.environ.get("GITHUB_REPOSITORY", "Vikram-Bosak/Facebook-Viral-Chinese-Reels")
     workflow_url = f"https://github.com/{repo_name}/actions/runs/{run_id}" if run_id else f"https://github.com/{repo_name}/actions"
     repo_url = f"https://github.com/{repo_name}"
     
@@ -224,3 +224,4 @@ def report_final_summary(summary_data: dict):
         f"{workflow_url}"
     )
     send_message(msg)
+

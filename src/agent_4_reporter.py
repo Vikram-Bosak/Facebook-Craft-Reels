@@ -48,10 +48,12 @@ def main():
     upload_status = report.get('upload_status', 'N/A')
     seo_title = report.get('seo_title', 'N/A')
     description = report.get('description', 'N/A')
-    fb_url = report.get('facebook_url', 'N/A')
+    
+    # Get FB and YT URLs with support for both format styles
+    fb_url = report.get('facebook_url', report.get('fb_url', 'N/A'))
+    yt_url = report.get('youtube_url', report.get('yt_url', 'N/A'))
     
     # Determine YouTube Status
-    yt_url = report.get('youtube_url', 'N/A')
     yt_status = "Success" if "youtube.com" in yt_url or "youtu.be" in yt_url else "Failed / N/A"
     
     # GitHub Action Variables
@@ -84,10 +86,32 @@ def main():
     else:
         send_telegram_message(message)
     
-    # Cleanup workspace completely
+    # Selective Cleanup to preserve queue.json and processed_history.json
+    print("Performing selective cleanup of temporary files in workspace...")
+    temp_files = [
+        "workspace/video_data.json",
+        "workspace/report.json",
+        "workspace/raw_video.mp4"
+    ]
+    for tf in temp_files:
+        if os.path.exists(tf):
+            try:
+                os.remove(tf)
+                print(f"Removed temporary file: {tf}")
+            except Exception as e:
+                print(f"Could not remove {tf}: {e}")
+                
     if os.path.exists("workspace"):
-        shutil.rmtree("workspace")
-        print("Cleaned up workspace directory.")
+        for filename in os.listdir("workspace"):
+            if filename.startswith("edited_") or filename.startswith("raw_video"):
+                filepath = os.path.join("workspace", filename)
+                try:
+                    if os.path.isfile(filepath):
+                        os.remove(filepath)
+                        print(f"Removed temporary file: {filepath}")
+                except Exception as e:
+                    print(f"Could not remove {filepath}: {e}")
 
 if __name__ == "__main__":
     main()
+

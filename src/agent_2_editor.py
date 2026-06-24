@@ -1,3 +1,6 @@
+import sys
+sys.modules['coverage'] = None
+
 import os
 import requests
 import ffmpeg
@@ -6,6 +9,7 @@ import textwrap
 import unicodedata
 from dotenv import load_dotenv
 from PIL import Image, ImageDraw, ImageFont
+
 
 # Attempt to import openai
 try:
@@ -382,6 +386,45 @@ def process_video(video_data):
         video_data["editing_status"] = "Failed"
         return video_data
 
+    # Translation step if enabled
+    translate_enabled = os.environ.get('ENABLE_TRANSLATION', 'false').lower() == 'true'
+    if translate_enabled:
+        print("Translating Chinese video to English...")
+        try:
+            try:
+                from .translator import translate_video
+            except ImportError:
+                from translator import translate_video
+            
+            output_dir = "workspace"
+            sub_lang = os.environ.get('SUBTITLE_LANGUAGE', 'english')
+            translation_result = translate_video(
+                raw_video_path,
+                output_dir=output_dir,
+                burn_subtitles=True,
+                subtitle_language=sub_lang
+            )
+            if translation_result and translation_result.get('english_video'):
+                translated_video = translation_result['english_video']
+                if os.path.exists(translated_video):
+                    # Copy directly to final edited output to preserve 3:4 template layout exactly without yellow border
+                    video_data["editing_status"] = "Success"
+                    video_data["seo_title"] = title
+                    video_data["edited_path"] = edited_video_path
+                    import shutil
+                    shutil.copy2(translated_video, edited_video_path)
+                    print(f"Bypassed yellow border/Pillow overlay. Final video saved at: {edited_video_path}")
+                    
+                    # Cleanup
+                    if raw_video_path != translated_video and os.path.exists(raw_video_path):
+                        try: os.remove(raw_video_path)
+                        except: pass
+                    try: os.remove(translated_video)
+                    except: pass
+                    return video_data
+        except Exception as e:
+            print(f"Translation failed: {e}. Proceeding with original video.")
+
     print(f"Processing video: {title}")
 
     headline_data = generate_headline(title)
@@ -405,4 +448,32 @@ def process_video(video_data):
         return video_data
 
 if __name__ == "__main__":
-    pass
+    # Standalone running: load state from workspace/video_data.json
+    import json
+    state_file = "workspace/video_data.json"
+    report_file = "workspace/report.json"
+    
+    if os.path.exists(state_file):
+        with open(state_file, "r") as f:
+            video_data = json.load(f)
+            
+        updated_data = process_video(video_data)
+        
+        with open(state_file, "w") as f:
+            json.dump(updated_data, f, indent=2)
+            
+        # Update report.json as well
+        if os.path.exists(report_file):
+            with open(report_file, "r") as f:
+                report = json.load(f)
+        else:
+            report = {}
+        report["editing_status"] = updated_data.get("editing_status", "Failed")
+        report["seo_title"] = updated_data.get("seo_title", "N/A")
+        with open(report_file, "w") as f:
+            json.dump(report, f, indent=2)
+            
+        print(f"Editor finished. Editing status: {updated_data.get('editing_status')}")
+    else:
+        print("No active video_data.json found. Skipping editor.")
+
