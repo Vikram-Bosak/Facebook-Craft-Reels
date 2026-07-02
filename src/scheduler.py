@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from logger import logger
 from agent_1_downloader import run_downloader, save_to_history
-from telegram_reporter import report_success, report_failure, report_progress
+from discord_reporter import report_success, report_failure, report_progress
 
 HISTORY_LOG_FILE = 'workspace/processed_history.json'
 QUEUE_FILE = 'workspace/queue.json'
@@ -67,10 +67,10 @@ def main():
     
     # 1. Clean history and check quota
     recent_count = clean_and_count_recent_uploads()
-    logger.info(f"Processed videos in last 24 hours: {recent_count}/5")
+    logger.info(f"Processed videos in last 24 hours: {recent_count}/4")
     
-    if recent_count >= 5:
-        logger.info("Daily quota of 5 videos in 24 hours has been reached. Skipping processing.")
+    if recent_count >= 4:
+        logger.info("Daily quota of 4 videos in 24 hours has been reached. Skipping processing.")
         return
         
     # 2. Run scan to populate the queue
@@ -103,12 +103,18 @@ def main():
         if result.returncode != 0:
             error_msg = f"Pipeline execution failed (code {result.returncode}): {result.stderr}"
             logger.error(error_msg)
-            report_failure("output_dubbed_reel.mp4", error_msg, 5 - recent_count - 1)
+            report_failure("output_dubbed_reel.mp4", error_msg, 4 - recent_count - 1)
             update_queue_status(video_id, "FAILED")
             return
             
         logger.info("E2E translation and rendering completed successfully!")
         
+        # Implement a random delay (up to 15 minutes / 900 seconds) before uploading to look natural
+        import random
+        random_delay = random.randint(1, 900)
+        logger.info(f"Waiting for random jitter delay of {random_delay} seconds (~{random_delay/60:.1f} mins) to simulate human upload behavior...")
+        time.sleep(random_delay)
+
         # Write state to workspace/video_data.json and report.json for agent_3_uploader
         os.makedirs("workspace", exist_ok=True)
         final_video_path = os.path.abspath("output_dubbed_reel.mp4")
@@ -175,19 +181,19 @@ def main():
         })
         save_processed_history(history)
         
-        # 6. Report Success to Telegram
+        # 6. Report Success to Discord/Console
         report_success(
             filename="output_dubbed_reel.mp4",
             title=title,
             fb_url=fb_url,
-            remaining_queue=max(0, 5 - recent_count - 1)
+            remaining_queue=max(0, 4 - recent_count - 1)
         )
         logger.info(f"Video {video_id} processed, uploaded, and logged successfully.")
         
     except Exception as e:
         error_msg = f"Unexpected error during scheduling cycle: {e}"
         logger.error(error_msg)
-        report_failure("output_dubbed_reel.mp4", error_msg, max(0, 5 - recent_count - 1))
+        report_failure("output_dubbed_reel.mp4", error_msg, max(0, 4 - recent_count - 1))
         update_queue_status(video_id, "FAILED")
 
 if __name__ == "__main__":

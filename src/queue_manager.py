@@ -6,7 +6,7 @@ try:
     from .database import is_duplicate, insert_media, update_reel_metadata, mark_reel_uploaded, mark_reel_failed, get_reel_status, increment_attempts, reset_attempts
     from .seo_generator import generate_seo_metadata, format_caption
     from .facebook_uploader import upload_reel, upload_photo
-    from .telegram_reporter import report_success, report_failure, report_progress
+    from .discord_reporter import report_success, report_failure, report_progress
     from .drive_reader import get_next_media, move_file, count_pending_media
     from .logger import logger
     from .translator import translate_video
@@ -14,7 +14,7 @@ except ImportError:
     from database import is_duplicate, insert_media, update_reel_metadata, mark_reel_uploaded, mark_reel_failed, get_reel_status, increment_attempts, reset_attempts
     from seo_generator import generate_seo_metadata, format_caption
     from facebook_uploader import upload_reel, upload_photo
-    from telegram_reporter import report_success, report_failure, report_progress
+    from discord_reporter import report_success, report_failure, report_progress
     from drive_reader import get_next_media, move_file, count_pending_media
     from logger import logger
     from translator import translate_video

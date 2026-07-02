@@ -4,29 +4,27 @@ import requests
 import shutil
 import html
 
-def send_telegram_message(message):
-    bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
-    chat_id = os.environ.get('TELEGRAM_CHAT_ID')
+def send_discord_webhook(message):
+    webhook_url = os.environ.get('DISCORD_WEBHOOK_URL')
     
-    if not bot_token or not chat_id:
-        print("Telegram bot configuration is missing. Skipping Telegram notification.")
+    if not webhook_url:
+        print("Discord Webhook configuration is missing. Skipping Discord notification.")
         return False
         
-    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    # Clean HTML tags for Discord Markdown style compatibility
+    clean_message = message.replace("<b>", "**").replace("</b>", "**")
+    
     payload = {
-        'chat_id': chat_id,
-        'text': message,
-        'parse_mode': 'HTML',
-        'disable_web_page_preview': True
+        "content": clean_message
     }
     
     try:
-        response = requests.post(url, json=payload, timeout=30)
+        response = requests.post(webhook_url, json=payload, timeout=30)
         response.raise_for_status()
-        print("Successfully sent Telegram report.")
+        print("Successfully sent Discord report.")
         return True
     except requests.exceptions.RequestException as e:
-        print(f"Failed to send Telegram message: {e}")
+        print(f"Failed to send Discord message: {e}")
         return False
 
 def main():
@@ -83,9 +81,9 @@ def main():
     )
     
     if "No new video" in download_status:
-        print("No new video to process. Skipping Telegram notification.")
+        print("No new video to process. Skipping Discord notification.")
     else:
-        send_telegram_message(message)
+        send_discord_webhook(message)
     
     # Selective Cleanup to preserve queue.json and processed_history.json
     print("Performing selective cleanup of temporary files in workspace...")
