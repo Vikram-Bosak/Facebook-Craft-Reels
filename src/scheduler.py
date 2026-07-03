@@ -156,8 +156,12 @@ def main():
                 # We can call the uploader agent to post to FB
                 logger.info("Triggering Agent 3: Facebook Uploader...")
                 upload_res = subprocess.run([python_exe, uploader_script], capture_output=True, text=True, timeout=300)
+                logger.info(f"Agent 3 stdout: {upload_res.stdout}")
+                if upload_res.stderr:
+                    logger.warning(f"Agent 3 stderr: {upload_res.stderr}")
+                
                 if upload_res.returncode == 0:
-                    logger.info("Agent 3 uploaded successfully.")
+                    logger.info("Agent 3 execution completed.")
                     # Read updated fb_url from video_data.json
                     try:
                         with open("workspace/video_data.json", "r") as f:
@@ -166,7 +170,7 @@ def main():
                     except Exception as json_err:
                         logger.warning(f"Could not read fb_url from video_data.json: {json_err}")
                 else:
-                    logger.warning(f"Agent 3 upload warning: {upload_res.stderr}")
+                    logger.error(f"Agent 3 upload failed with code {upload_res.returncode}")
             except Exception as e:
                 logger.error(f"Error running uploader script: {e}")
                 
@@ -183,13 +187,28 @@ def main():
         })
         save_processed_history(history)
         
-        # 6. Report Success to Discord/Console
-        report_success(
-            filename="output_dubbed_reel.mp4",
-            title=title,
-            fb_url=fb_url,
-            remaining_queue=max(0, 4 - recent_count - 1)
-        )
+        # 6. Run Agent 4 Reporter to send detailed Discord report and perform cleanup
+        reporter_script = os.path.join(os.path.dirname(__file__), 'agent_4_reporter.py')
+        if os.path.exists(reporter_script):
+            try:
+                logger.info("Triggering Agent 4: Reporter...")
+                reporter_res = subprocess.run([python_exe, reporter_script], capture_output=True, text=True, timeout=120)
+                logger.info(f"Agent 4 stdout: {reporter_res.stdout}")
+                if reporter_res.stderr:
+                    logger.warning(f"Agent 4 stderr: {reporter_res.stderr}")
+                if reporter_res.returncode == 0:
+                    logger.info("Agent 4 reporter ran successfully.")
+                else:
+                    logger.warning(f"Agent 4 reporter failed with code {reporter_res.returncode}")
+            except Exception as e:
+                logger.error(f"Error running reporter script: {e}")
+        else:
+            report_success(
+                filename="output_dubbed_reel.mp4",
+                title=title,
+                fb_url=fb_url,
+                remaining_queue=max(0, 4 - recent_count - 1)
+            )
         logger.info(f"Video {video_id} processed, uploaded, and logged successfully.")
         
     except Exception as e:
