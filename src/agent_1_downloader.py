@@ -266,7 +266,8 @@ if __name__ == "__main__":
             "seo_title": "N/A",
             "description": "N/A",
             "facebook_url": "N/A",
-            "youtube_url": "N/A"
+            "youtube_url": "N/A",
+            "source_url": item.get("source_url", "N/A")
         }
         with open("workspace/report.json", "w") as f:
             json.dump(report_data, f, indent=2)

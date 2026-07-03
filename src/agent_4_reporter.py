@@ -47,6 +47,7 @@ def main():
     upload_status = html.escape(report.get('upload_status', 'N/A'))
     seo_title = html.escape(report.get('seo_title', 'N/A'))
     description = html.escape(report.get('description', 'N/A'))
+    raw_video_url = html.escape(report.get('source_url', 'N/A'))
     
     # Get FB and YT URLs with support for both format styles
     fb_url = html.escape(report.get('facebook_url', report.get('fb_url', 'N/A')))
@@ -73,6 +74,7 @@ def main():
         f"🏷️ SEO Title:\n{seo_title}\n\n"
         f"📝 Description:\n{description}\n\n"
         f"Original File: {video_name}.mp4\n\n"
+        f"🔗 Raw Video URL:\n{raw_video_url}\n\n"
         f"🔗 Facebook Reel URL:\n{fb_url}\n\n"
         f"▶️ YouTube Video URL:\n{yt_url}\n\n"
         f"📦 GitHub Repository:\n{repo_url}\n\n"

@@ -141,7 +141,8 @@ def main():
             "seo_title": headline_text,
             "description": "N/A",
             "facebook_url": "N/A",
-            "youtube_url": "N/A"
+            "youtube_url": "N/A",
+            "source_url": source_url
         }
         with open("workspace/report.json", "w") as f:
             json.dump(report_data, f, indent=2)
