@@ -66,18 +66,17 @@ def main():
     yt_status_label = "Success" if yt_status == "Success" else "Failed"
     
     message = (
-        f"{emoji_status} <b>📤 Pipeline Run Complete</b>\n\n"
-        f"🎬 <b>Video Name:</b>\n{video_name}\n\n"
-        f"📥 <b>Download Status:</b> {download_status}\n"
-        f"✂️ <b>Editing Status:</b> {editing_status}\n"
-        f"📤 <b>Facebook Upload:</b> {upload_status}\n"
-        f"📤 <b>YouTube Upload:</b> {yt_status_label}\n\n"
-        f"🏷️ <b>SEO Title:</b>\n{seo_title}\n\n"
-        f"📝 <b>Description:</b>\n{description}\n\n"
-        f"🔗 <b>Facebook Reel:</b>\n{fb_url}\n\n"
-        f"▶️ <b>YouTube Video:</b>\n{yt_url}\n\n"
-        f"📦 <b>GitHub Repo:</b>\n{repo_url}\n\n"
-        f"📄 <b>Workflow Run:</b>\n{run_url}"
+        f"✅ Pipeline Run Completed\n\n"
+        f"🎬 Video Name:\n{video_name}\n\n"
+        f"📤 Facebook Upload Status: {upload_status}\n"
+        f"📤 YouTube Upload Status: {yt_status_label}\n\n"
+        f"🏷️ SEO Title:\n{seo_title}\n\n"
+        f"📝 Description:\n{description}\n\n"
+        f"Original File: {video_name}.mp4\n\n"
+        f"🔗 Facebook Reel URL:\n{fb_url}\n\n"
+        f"▶️ YouTube Video URL:\n{yt_url}\n\n"
+        f"📦 GitHub Repository:\n{repo_url}\n\n"
+        f"📄 Workflow Run:\n{run_url}"
     )
     
     if "No new video" in download_status:
