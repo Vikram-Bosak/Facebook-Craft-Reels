@@ -68,10 +68,10 @@ def main():
     
     # 1. Clean history and check quota
     recent_count = clean_and_count_recent_uploads()
-    logger.info(f"Processed videos in last 24 hours: {recent_count}/4")
+    logger.info(f"Processed videos in last 24 hours: {recent_count}/6")
     
-    if recent_count >= 4:
-        logger.info("Daily quota of 4 videos in 24 hours has been reached. Skipping processing.")
+    if recent_count >= 6:
+        logger.info("Daily quota of 6 videos in 24 hours has been reached. Skipping processing.")
         return
         
     # 2. Run scan to populate the queue
@@ -104,7 +104,7 @@ def main():
         if result.returncode != 0:
             error_msg = f"Pipeline execution failed (code {result.returncode}): {result.stderr}"
             logger.error(error_msg)
-            report_failure("output_dubbed_reel.mp4", error_msg, 4 - recent_count - 1)
+            report_failure("output_dubbed_reel.mp4", error_msg, 6 - recent_count - 1)
             update_queue_status(video_id, "FAILED")
             return
             
@@ -207,14 +207,14 @@ def main():
                 filename="output_dubbed_reel.mp4",
                 title=title,
                 fb_url=fb_url,
-                remaining_queue=max(0, 4 - recent_count - 1)
+                remaining_queue=max(0, 6 - recent_count - 1)
             )
         logger.info(f"Video {video_id} processed, uploaded, and logged successfully.")
         
     except Exception as e:
         error_msg = f"Unexpected error during scheduling cycle: {e}"
         logger.error(error_msg)
-        report_failure("output_dubbed_reel.mp4", error_msg, max(0, 4 - recent_count - 1))
+        report_failure("output_dubbed_reel.mp4", error_msg, max(0, 6 - recent_count - 1))
         update_queue_status(video_id, "FAILED")
 
 if __name__ == "__main__":
