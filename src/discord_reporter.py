@@ -1,6 +1,10 @@
 import os
 import requests
 from datetime import datetime
+from dotenv import load_dotenv
+
+# Load env variables from .env
+load_dotenv()
 
 def send_discord_message(message: str) -> None:
     """

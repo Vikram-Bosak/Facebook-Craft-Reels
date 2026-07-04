@@ -3,6 +3,10 @@ import json
 import requests
 import shutil
 import html
+from dotenv import load_dotenv
+
+# Load env variables from .env
+load_dotenv()
 
 def send_discord_webhook(message):
     webhook_url = os.environ.get('DISCORD_WEBHOOK_URL')
