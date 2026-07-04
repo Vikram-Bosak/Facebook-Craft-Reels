@@ -1,0 +1,92 @@
+import os
+import sys
+import json
+import subprocess
+from dotenv import load_dotenv
+
+# Add src to path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'src')))
+
+from facebook_uploader import upload_reel
+from agent_4_reporter import send_discord_webhook
+from logger import logger
+
+def main():
+    load_dotenv()
+    
+    if len(sys.argv) < 2:
+        print("Usage: python manual_run.py <Bilibili_or_Douyin_URL>")
+        sys.exit(1)
+        
+    url = sys.argv[1]
+    video_path = "output_dubbed_reel.mp4"
+    workspace_dir = "workspace"
+    
+    # 1. Clean workspace directory
+    print("Step 1: Cleaning workspace...")
+    if os.path.exists(workspace_dir):
+        for filename in os.listdir(workspace_dir):
+            if filename != "raw_video.mp4":
+                file_path = os.path.join(workspace_dir, filename)
+                try:
+                    if os.path.isfile(file_path):
+                        os.remove(file_path)
+                except Exception:
+                    pass
+
+    # 2. Download Bilibili video
+    print(f"\nStep 2: Downloading video from: {url}")
+    python_exe = sys.executable
+    download_cmd = [python_exe, "download_bilibili.py", url]
+    res_dl = subprocess.run(download_cmd)
+    if res_dl.returncode != 0:
+        print("Error: Video download failed.")
+        sys.exit(1)
+
+    # 3. Run translation pipeline
+    print("\nStep 3: Running translation and dubbing pipeline...")
+    pipeline_cmd = [python_exe, "run_pipeline.py", "mock_url"]
+    res_pipe = subprocess.run(pipeline_cmd)
+    if res_pipe.returncode != 0:
+        print("Error: Translation pipeline failed.")
+        sys.exit(1)
+
+    # 4. Upload to Facebook Page
+    print("\nStep 4: Uploading to Facebook Page...")
+    caption = "Folds a Minecraft Creeper out of one piece of paper! ✂️🎨 Mind-blowing DIY Paper Craft! #diy #minecraft #creeper #papercraft #origami #shorts #craft"
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+
+    try:
+        fb_url = upload_reel(video_path, caption)
+        print(f"Success: Reel uploaded to Facebook! Link: {fb_url}")
+    except Exception as e:
+        print(f"Error uploading to Facebook: {e}")
+        sys.exit(1)
+
+    # 5. Trigger Discord Report
+    print("\nStep 5: Sending final report to Discord...")
+    seo_title = "Folds a Minecraft Creeper out of one piece of paper!"
+    message = (
+        f"✅ Manual Pipeline Run Completed\n\n"
+        f"🎬 Video Name:\nMinecraft Creeper Paper Folding\n\n"
+        f"📤 Facebook Upload Status: Success\n"
+        f"📤 YouTube Upload Status: N/A\n\n"
+        f"🏷️ SEO Title:\n{seo_title}\n\n"
+        f"📝 Description:\n{caption}\n\n"
+        f"Original File: {video_path}\n\n"
+        f"🔗 Raw Video URL:\n{url}\n\n"
+        f"🔗 Facebook Reel URL:\n{fb_url}\n\n"
+        f"▶️ YouTube Video URL:\nN/A"
+    )
+    
+    success = send_discord_webhook(message)
+    if success:
+        print("Discord report sent successfully!")
+    else:
+        print("Failed to send Discord report.")
+
+if __name__ == "__main__":
+    main()
