@@ -68,23 +68,25 @@ def main():
 
     # 5. Trigger Discord Report
     print("\nStep 5: Sending final report to Discord...")
-    seo_title = "Folds a Minecraft Creeper out of one piece of paper!"
-    message = (
-        f"✅ Manual Pipeline Run Completed\n\n"
-        f"🎬 Video Name:\nMinecraft Creeper Paper Folding\n\n"
-        f"📤 Facebook Upload Status: Success\n"
-        f"📤 YouTube Upload Status: N/A\n\n"
-        f"🏷️ SEO Title:\n{seo_title}\n\n"
-        f"📝 Description:\n{caption}\n\n"
-        f"Original File: {video_path}\n\n"
-        f"🔗 Raw Video URL:\n{url}\n\n"
-        f"🔗 Facebook Reel URL:\n{fb_url}\n\n"
-        f"▶️ YouTube Video URL:\nN/A"
-    )
-    
-    success = send_discord_webhook(message)
-    if success:
-        print("Discord report sent successfully!")
+    report_data = {
+        "video_name": "一张纸竟折出苦力怕！！！ (Minecraft Creeper)",
+        "download_status": "Success",
+        "editing_status": "Success",
+        "upload_status": "Success",
+        "seo_title": "Folds a Minecraft Creeper out of one piece of paper!",
+        "description": caption,
+        "facebook_url": fb_url,
+        "youtube_url": "N/A",
+        "source_url": url
+    }
+    os.makedirs(workspace_dir, exist_ok=True)
+    with open(os.path.join(workspace_dir, "report.json"), "w", encoding="utf-8") as f:
+        json.dump(report_data, f, indent=2)
+
+    reporter_script = os.path.join("src", "agent_4_reporter.py")
+    res_rep = subprocess.run([python_exe, reporter_script])
+    if res_rep.returncode == 0:
+        print("Discord report sent successfully via Agent 4!")
     else:
         print("Failed to send Discord report.")
 

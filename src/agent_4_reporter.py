@@ -31,6 +31,27 @@ def send_discord_webhook(message):
         print(f"Failed to send Discord message: {e}")
         return False
 
+def get_local_repo_name():
+    import subprocess
+    try:
+        res = subprocess.run(['git', 'config', '--get', 'remote.origin.url'], capture_output=True, text=True, timeout=5)
+        url = res.stdout.strip()
+        if url:
+            # Clean credentials from url
+            if "@" in url:
+                url = "https://" + url.split("@")[-1]
+            if "github.com/" in url:
+                parts = url.split("github.com/")[-1].replace(".git", "").split("/")
+                if len(parts) >= 2:
+                    return f"{parts[-2]}/{parts[-1]}"
+            elif "github.com:" in url:
+                parts = url.split("github.com:")[-1].replace(".git", "").split("/")
+                if len(parts) >= 2:
+                    return f"{parts[-2]}/{parts[-1]}"
+    except Exception:
+        pass
+    return "Vikram-Bosak/Facebook-Craft-Reels"
+
 def main():
     print("Starting Agent 4: Reporter")
     report_path = "workspace/report.json"
@@ -61,10 +82,13 @@ def main():
     yt_status = "Success" if "youtube.com" in yt_url or "youtu.be" in yt_url else "Failed / N/A"
     
     # GitHub Action Variables
-    repo = os.environ.get('GITHUB_REPOSITORY', 'Facebook-Viral-Chinese-Reels')
-    run_id = os.environ.get('GITHUB_RUN_ID', 'UNKNOWN')
+    repo = os.environ.get('GITHUB_REPOSITORY') or get_local_repo_name()
+    run_id = os.environ.get('GITHUB_RUN_ID')
     repo_url = f"https://github.com/{repo}"
-    run_url = f"{repo_url}/actions/runs/{run_id}"
+    if run_id:
+        run_url = f"{repo_url}/actions/runs/{run_id}"
+    else:
+        run_url = f"{repo_url}/actions"
     
     emoji_status = "✅" if upload_status == "Success" else "❌"
     
