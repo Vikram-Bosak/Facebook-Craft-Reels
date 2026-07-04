@@ -43,11 +43,11 @@ def generate_headline(title):
 
         prompt = (
             f"分析这个中文标题: '{title}'。\n"
-            "为短视频创作一个吸引眼球、制造悬念的标题钩子。\n"
+            "为手工、DIY、折纸等创意短视频创作一个吸引眼球、制造悬念的标题钩子。\n"
             "规则:\n"
             "1. 必须制造强烈悬念，让观众立刻停下来看。\n"
             "2. 保持简短有力（5到15个字）。\n"
-            "3. 使用有冲击力的词语（例如：'震惊', '终于', '真相', '万万没想到', '太离谱了'）。\n"
+            "3. 使用有冲击力的词语（例如：'震惊', '万万没想到', '竟然还能这样', '太神奇了', '天才设计'）。\n"
             "4. 用中文输出，不要用英文。\n"
             "5. 不要括号、不要特殊标签。\n"
             "6. 返回一个有效的JSON对象，包含一个key: \"hook\"（完整文本）。\n"
@@ -436,7 +436,7 @@ def process_video(video_data):
             translation_result = translate_video(
                 raw_video_path,
                 output_dir=output_dir,
-                burn_subtitles=True,
+                burn_subtitles=False,
                 subtitle_language=sub_lang
             )
             if translation_result and translation_result.get('english_video'):

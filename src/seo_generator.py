@@ -150,10 +150,18 @@ def generate_fallback_metadata(filename):
         'sushi', 'ramen', 'fried', 'steamed', 'spicy', 'sweet'
     }
     
+    craft_keywords = {
+        'craft', 'diy', 'handmade', 'origami', 'clay', 'carve', 'carving',
+        'wood', 'woodworking', 'paint', 'painting', 'draw', 'drawing',
+        'knitting', 'crochet', 'sew', 'sewing', 'creative', 'art', 'artist',
+        'sculpt', 'sculpture', 'lifehack', 'lifehacks', 'papercraft'
+    }
+    
     is_wildlife = any(k in wildlife_keywords for k in keywords)
     is_nature = any(k in nature_keywords for k in keywords)
     is_culture = any(k in culture_keywords for k in keywords)
     is_food = any(k in food_keywords for k in keywords)
+    is_craft = any(k in craft_keywords for k in keywords)
     
     # Common viral hashtags for US audience
     common_viral_tags = ['#viral', '#trending', '#fyp', '#foryou', '#explore', '#reels', '#shorts']
@@ -215,6 +223,20 @@ def generate_fallback_metadata(filename):
             "Warning: Do NOT watch this video hungry! This {topic} is incredible! 🔥"
         ]
         cat_tags = ['#food', '#foodie', '#cooking', '#recipe', '#yummy', '#delicious', '#foodporn', '#chef']
+    elif is_craft:
+        titles = [
+            "This {topic} DIY Is Pure Genius! 😱",
+            "Wait Until You See How This {topic} Is Made! 🎨",
+            "The Most Satisfying {topic} Craft You'll See Today! 🔥",
+            "I Tried This {topic} Idea And It's Amazing! 🤯",
+            "This {topic} Lifehack Is A Game Changer! 🛠️"
+        ]
+        descriptions = [
+            "This creative {topic} idea is absolutely brilliant! DIY lovers, you must try this! 🎨",
+            "The art of making {topic} captured perfectly. This is crafting at its finest! ✂️",
+            "Get inspired by this beautiful {topic} project. Share it with fellow creators! 🔥"
+        ]
+        cat_tags = ['#diy', '#craft', '#handmade', '#creative', '#art', '#crafting', '#lifehacks', '#maker']
     else:
         titles = [
             "Wait For It... This {topic} Is CRAZY! 😱",

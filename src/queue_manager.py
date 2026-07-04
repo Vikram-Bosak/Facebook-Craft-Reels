@@ -137,7 +137,7 @@ def process_next_media(media_type='reel'):
                 translation_result = translate_video(
                     filepath, 
                     output_dir=output_dir,
-                    burn_subtitles=True,
+                    burn_subtitles=False,
                     subtitle_language='dual'
                 )
                 

@@ -1,8 +1,8 @@
-# 🇺🇸 AI US Audience Video Automation System
+# 🇺🇸 AI US Audience Craft/DIY Video Automation System
 
-Fully automated cloud-based system that uploads Chinese viral videos to Facebook Reels and YouTube Shorts, **auto-translated to English** for United States audience.
+Fully automated cloud-based system that uploads Chinese viral craft/DIY videos to Facebook Reels and YouTube Shorts, **auto-translated to English** for United States audience.
 
-System runs 24/7, fetching Chinese videos, translating them to English, generating AI SEO titles, uploading, and sending reports via Telegram.
+System runs 24/7, fetching Chinese craft videos, translating them to English, generating AI SEO titles, uploading, and sending reports via Telegram.
 
 ## ✨ Features
 

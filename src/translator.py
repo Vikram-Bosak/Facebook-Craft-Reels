@@ -416,7 +416,7 @@ def generate_segment_tts(text, voice, output_path):
     try:
         import edge_tts
         import asyncio
-        asyncio.run(edge_tts.Communicate(text, voice).save(output_path))
+        asyncio.run(edge_tts.Communicate(text, voice, rate="-10%").save(output_path))
         return True
     except Exception as e:
         logger.error(f"Fallback edge-tts failed for text '{text}': {e}")
@@ -498,8 +498,8 @@ def generate_english_tts(segments, output_audio_path=None, video_path=None):
                 speed = actual_dur / target_dur
                 logger.info(f"Segment {idx} is too slow ({actual_dur:.2f}s > {target_dur:.2f}s). Speeding up by {speed:.2f}x")
                 
-                # Cap speed at a reasonable limit (e.g. 1.2x) to prevent robotic/unnatural audio
-                speed = min(speed, 1.2)
+                # Cap speed at a reasonable limit (e.g. 1.05x) to prevent robotic/unnatural audio
+                speed = min(speed, 1.05)
                 
                 # Chain atempo filters if speed > 2.0
                 if speed > 2.0:
@@ -570,9 +570,14 @@ def separate_vocals(audio_path, output_dir):
             sys.path.append(user_site)
         
         # Run Demucs using the local CLI command directly
-        demucs_executable = os.path.expanduser('~/.local/bin/demucs')
-        if not os.path.exists(demucs_executable):
-            demucs_executable = 'demucs' # Fallback to path
+        venv_dir = os.path.dirname(sys.executable)
+        demucs_venv = os.path.join(venv_dir, 'demucs.exe')
+        if os.path.exists(demucs_venv):
+            demucs_executable = demucs_venv
+        else:
+            demucs_executable = os.path.expanduser('~/.local/bin/demucs')
+            if not os.path.exists(demucs_executable):
+                demucs_executable = 'demucs' # Fallback to path
             
         cmd = [
             demucs_executable,
@@ -615,14 +620,14 @@ def merge_audio_with_video(video_path, audio_path, bg_music_path=None, output_pa
 
     try:
         if bg_music_path and os.path.exists(bg_music_path):
-            logger.info("Mixing separated background music (no vocals) with English dubbed voice...")
-            # We mix BGM (bg_music_path) at 90% volume and English voice (audio_path) at 100% volume
+            logger.info("Mixing background music/audio with English dubbed voice...")
+            # We mix BGM (bg_music_path) at 40% volume and English voice (audio_path) at 100% volume
             cmd = [
                 'ffmpeg', '-y',
                 '-i', video_path,
                 '-i', bg_music_path,
                 '-i', audio_path,
-                '-filter_complex', '[1:a]volume=0.9[bg];[2:a]volume=1.0[fg];[bg][fg]amix=inputs=2:duration=first:dropout_transition=0[outa]',
+                '-filter_complex', '[1:a]volume=0.4[bg];[2:a]volume=1.0[fg];[bg][fg]amix=inputs=2:duration=first:dropout_transition=0[outa]',
                 '-map', '0:v:0',
                 '-map', '[outa]',
                 '-c:v', 'copy',
@@ -663,11 +668,11 @@ def merge_audio_with_video(video_path, audio_path, bg_music_path=None, output_pa
 
 def overlay_on_template_3_4(video_path, output_path):
     """
-    Crops the input vertical video to the aspect ratio of the 3:4 frame content box,
-    scales it to 651x838, and overlays it onto the template assets/template_3_4.jpg
-    at coordinates x=57, y=109.
+    Crops the input vertical video to the aspect ratio of the craft template content box,
+    scales it to 540x836, and overlays it onto the template assets/template_3_4.jpg
+    at coordinates x=18, y=134.
     """
-    logger.info("Applying 3:4 template overlay to video...")
+    logger.info("Applying craft template overlay to video...")
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     template_path = os.path.join(base_dir, 'assets', 'template_3_4.jpg')
     if not os.path.exists(template_path):
@@ -678,13 +683,13 @@ def overlay_on_template_3_4(video_path, output_path):
         return video_path
 
     try:
-        # We crop the vertical video dynamically to match the aspect ratio of the new content box (716x926),
-        # then scale it to 716x926, and overlay it on the template image (scaled to 746x1024) at 14:82
+        # We crop the vertical video dynamically to match the aspect ratio of the new content box (540x836),
+        # then scale it to 540x836, and overlay it on the template image (scaled to 576x1024) at 18:134
         cmd = [
             'ffmpeg', '-y',
             '-i', template_path,
             '-i', video_path,
-            '-filter_complex', '[0:v]scale=746:1024[tmp];[1:v]crop=w=\'min(iw,ih*716/926)\':h=\'min(ih,iw*926/716)\',scale=716:926[vid];[tmp][vid]overlay=14:82[outv]',
+            '-filter_complex', '[0:v]scale=576:1024[tmp];[1:v]crop=w=\'min(iw,ih*540/836)\':h=\'min(ih,iw*836/540)\',scale=540:836[vid];[tmp][vid]overlay=18:134[outv]',
             '-map', '[outv]',
             '-map', '1:a',
             '-c:v', 'libx264',
@@ -801,11 +806,11 @@ def burn_subtitles_into_video(video_path, srt_path, output_path=None, language='
 
         # Subtitle style based on language
         if language == 'chinese':
-            style = f"FontName=Noto Sans SC,FontSize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=1,Alignment=2,MarginV={margin_v}"
+            style = f"FontName=Noto Sans SC,FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=1,Alignment=2,MarginV={margin_v}"
         elif language == 'dual':
-            style = f"FontName=Noto Sans SC,FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=1,Alignment=2,MarginV={margin_v_dual}"
+            style = f"FontName=Noto Sans SC,FontSize=14,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=1,Alignment=2,MarginV={margin_v_dual}"
         else:  # english
-            style = f"FontName=Arial,FontSize=16,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=1,Alignment=2,MarginV={margin_v}"
+            style = f"FontName=Arial,FontSize=12,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=1,Alignment=2,MarginV={margin_v}"
 
         # Escape path for FFmpeg subtitle filter
         escaped_srt = srt_path.replace('\\', '/').replace(':', '\\:')
@@ -919,6 +924,9 @@ def translate_video(video_path, output_dir=None, burn_subtitles=True, subtitle_l
         bg_music_path = separate_vocals(audio_path, output_dir)
         if bg_music_path:
             temp_files.append(bg_music_path)
+        else:
+            logger.warning("Demucs separation failed. Falling back to using original audio as background track.")
+            bg_music_path = audio_path
 
         # Step 2: Transcribe Chinese
         logger.info("Step 2/6: Transcribing Chinese audio...")

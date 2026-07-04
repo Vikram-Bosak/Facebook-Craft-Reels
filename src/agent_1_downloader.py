@@ -32,14 +32,14 @@ def save_queue(queue):
     with open(QUEUE_FILE, 'w') as f:
         json.dump(queue, f, indent=2)
 
-async def scan_douyin_food_videos():
-    print("Scanning Douyin Food section for new videos...")
+async def scan_douyin_craft_videos():
+    print("Scanning Douyin DIY/Craft section for new videos...")
     history = load_history()
     queue = load_queue()
     queued_ids = {item['id'] for item in queue}
     
-    # Target URL for food videos
-    target_url = "https://www.douyin.com/jingxuan/food"
+    # Target URL for DIY/Craft videos
+    target_url = "https://www.douyin.com/jingxuan/diy"
     
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
@@ -68,15 +68,13 @@ async def scan_douyin_food_videos():
                 text = await card.inner_text()
                 text_cleaned = ' '.join(text.split())
                 
-                # Check for food related keywords (reviews, tasting, challenge, recipe/cooking)
+                # Check for craft/DIY related keywords (handmade, origami, clay, carving, woodworking, knitting, drawing, etc.)
                 keywords = [
-                    "探店", "测评", "评测", "试吃", "吃播", "吃饭", "炫饭", "狂吃", "大口吃", "吃货", # Reviews & Tasting / Eating
-                    "挑战", "比赛", "pk", "争霸", # Challenges / Competitions
-                    "做菜", "烹饪", "做法", "食谱", "教程", "中餐", "家常菜", "美食推荐", "做法教程", "教你做" # Recipes & Cooking
+                    "手工", "手艺", "DIY", "折纸", "黏土", "雕刻", "编织", "木工", "画画", "手工制作", "创意手工", "废物利用", "工艺品", "纸艺", "旧物改造", "生活妙招"
                 ]
-                is_food = any(kw in text_cleaned for kw in keywords)
+                is_craft = any(kw in text_cleaned for kw in keywords)
                 
-                if is_food:
+                if is_craft:
                     video_url = f"https://www.douyin.com/video/{aweme_id}"
                     new_candidates.append({
                         "id": aweme_id,
@@ -84,7 +82,7 @@ async def scan_douyin_food_videos():
                         "source_url": video_url,
                         "status": "PENDING"
                     })
-                    print(f"Discovered new food video: ID={aweme_id} | Title={text_cleaned[:50]}")
+                    print(f"Discovered new craft video: ID={aweme_id} | Title={text_cleaned[:50]}")
             
             if new_candidates:
                 # Add to queue
@@ -92,7 +90,7 @@ async def scan_douyin_food_videos():
                 save_queue(queue)
                 print(f"Added {len(new_candidates)} new videos to the queue.")
             else:
-                print("No new unique food videos discovered in this scan.")
+                print("No new unique craft videos discovered in this scan.")
                 
         except Exception as e:
             print(f"Error scanning Douyin: {e}")
@@ -200,7 +198,7 @@ def is_9_16_ratio(video_path):
 
 def run_downloader():
     print("Running Downloader: Scanning and filling queue...")
-    asyncio.run(scan_douyin_food_videos())
+    asyncio.run(scan_douyin_craft_videos())
     
     # Loop to find the first PENDING video in the queue that has a 9:16 aspect ratio
     queue = load_queue()
