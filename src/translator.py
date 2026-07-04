@@ -379,7 +379,8 @@ def generate_segment_tts(text, voice, output_path):
             response = client.audio.speech.create(
                 model="tts-1",
                 voice=openai_voice,
-                input=text
+                input=text,
+                speed=0.9
             )
             response.stream_to_file(output_path)
             return True
@@ -405,7 +406,7 @@ def generate_segment_tts(text, voice, output_path):
             elif voice.startswith("af_") or voice.startswith("am_") or voice.startswith("bf_") or voice.startswith("bm_"):
                 kokoro_voice = voice
                 
-            samples, sample_rate = kokoro.create(text, voice=kokoro_voice, speed=1.0, lang="en-us")
+            samples, sample_rate = kokoro.create(text, voice=kokoro_voice, speed=0.9, lang="en-us")
             import soundfile as sf
             sf.write(output_path, samples, sample_rate)
             return True
@@ -416,11 +417,12 @@ def generate_segment_tts(text, voice, output_path):
     try:
         import edge_tts
         import asyncio
-        asyncio.run(edge_tts.Communicate(text, voice, rate="-10%").save(output_path))
+        asyncio.run(edge_tts.Communicate(text, voice, rate="-20%").save(output_path))
         return True
     except Exception as e:
         logger.error(f"Fallback edge-tts failed for text '{text}': {e}")
         return False
+
 
 def generate_english_tts(segments, output_audio_path=None, video_path=None):
     """
@@ -560,7 +562,7 @@ def generate_english_tts(segments, output_audio_path=None, video_path=None):
 def separate_vocals(audio_path, output_dir):
     """
     Runs Demucs on the audio file to separate vocals from background music/effects.
-    Returns path to the background (no vocals) audio file.
+    Returns path to the background (other/sfx) audio file.
     """
     logger.info("Running Demucs vocal separator on audio...")
     try:
@@ -581,7 +583,6 @@ def separate_vocals(audio_path, output_dir):
             
         cmd = [
             demucs_executable,
-            '--two-stems=vocals',
             '-o', output_dir,
             audio_path
         ]
@@ -594,10 +595,10 @@ def separate_vocals(audio_path, output_dir):
             return None
             
         base_name = os.path.splitext(os.path.basename(audio_path))[0]
-        bg_audio_path = os.path.join(output_dir, 'htdemucs', base_name, 'no_vocals.wav')
+        bg_audio_path = os.path.join(output_dir, 'htdemucs', base_name, 'other.wav')
         
         if os.path.exists(bg_audio_path):
-            logger.info(f"Vocals successfully separated. Background audio: {bg_audio_path}")
+            logger.info(f"Vocals and music stems successfully separated. Original Sound Effects (other.wav): {bg_audio_path}")
             return bg_audio_path
         else:
             logger.error(f"Demucs finished but output file not found at: {bg_audio_path}")
@@ -608,9 +609,32 @@ def separate_vocals(audio_path, output_dir):
         return None
 
 
+def download_default_bgm():
+    """
+    Downloads default copyright-free background music (cute-lofi.mp3) if not present.
+    """
+    try:
+        import requests
+        assets_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'assets'))
+        os.makedirs(assets_dir, exist_ok=True)
+        bgm_path = os.path.join(assets_dir, 'cute-lofi.mp3')
+        if not os.path.exists(bgm_path):
+            logger.info("Downloading default copyright-free background music (cute-lofi.mp3)...")
+            url = "https://raw.githubusercontent.com/jungcookgf/valentines-day/main/cute-lofi.mp3"
+            r = requests.get(url, timeout=30)
+            r.raise_for_status()
+            with open(bgm_path, 'wb') as f:
+                f.write(r.content)
+            logger.info(f"Downloaded default BGM to: {bgm_path}")
+        return bgm_path
+    except Exception as e:
+        logger.error(f"Error downloading default BGM: {e}")
+        return None
+
 def merge_audio_with_video(video_path, audio_path, bg_music_path=None, output_path=None):
     """
     Mix original background audio (with vocals removed) with translated English TTS voice.
+    Also adds copyright-free background music.
     """
     if output_path is None:
         base, ext = os.path.splitext(video_path)
@@ -618,37 +642,76 @@ def merge_audio_with_video(video_path, audio_path, bg_music_path=None, output_pa
 
     logger.info(f"Merging translated audio with video...")
 
+    # Get copyright-free BGM path
+    new_bgm_path = download_default_bgm()
+
     try:
-        if bg_music_path and os.path.exists(bg_music_path):
-            logger.info("Mixing background music/audio with English dubbed voice...")
-            # We mix BGM (bg_music_path) at 40% volume and English voice (audio_path) at 100% volume
-            cmd = [
-                'ffmpeg', '-y',
-                '-i', video_path,
-                '-i', bg_music_path,
-                '-i', audio_path,
-                '-filter_complex', '[1:a]volume=0.4[bg];[2:a]volume=1.0[fg];[bg][fg]amix=inputs=2:duration=first:dropout_transition=0[outa]',
-                '-map', '0:v:0',
-                '-map', '[outa]',
-                '-c:v', 'copy',
-                '-c:a', 'aac',
-                '-b:a', '192k',
-                output_path
-            ]
+        is_sfx_separated = bg_music_path and bg_music_path.endswith('other.wav') and os.path.exists(bg_music_path)
+        
+        if new_bgm_path and os.path.exists(new_bgm_path):
+            if is_sfx_separated:
+                logger.info("Mixing original SFX (other.wav) at 90%, English voice at 60%, and new looped BGM at 8%...")
+                # Input 0: Video, Input 1: SFX (other.wav), Input 2: English Voice, Input 3: New BGM (looped)
+                cmd = [
+                    'ffmpeg', '-y',
+                    '-i', video_path,
+                    '-i', bg_music_path,
+                    '-i', audio_path,
+                    '-stream_loop', '-1', '-i', new_bgm_path,
+                    '-filter_complex', '[1:a]volume=0.9[sfx];[2:a]volume=0.6[fg];[3:a]volume=0.08[bg];[sfx][fg][bg]amix=inputs=3:duration=first:dropout_transition=0[outa]',
+                    '-map', '0:v:0',
+                    '-map', '[outa]',
+                    '-c:v', 'copy',
+                    '-c:a', 'aac',
+                    '-b:a', '192k',
+                    output_path
+                ]
+            else:
+                logger.warning("Demucs separation was not successful (no other.wav). Mixing English voice at 60% and new looped BGM at 8%...")
+                # Input 0: Video, Input 1: English Voice, Input 2: New BGM (looped)
+                cmd = [
+                    'ffmpeg', '-y',
+                    '-i', video_path,
+                    '-i', audio_path,
+                    '-stream_loop', '-1', '-i', new_bgm_path,
+                    '-filter_complex', '[1:a]volume=0.6[fg];[2:a]volume=0.08[bg];[fg][bg]amix=inputs=2:duration=first:dropout_transition=0[outa]',
+                    '-map', '0:v:0',
+                    '-map', '[outa]',
+                    '-c:v', 'copy',
+                    '-c:a', 'aac',
+                    '-b:a', '192k',
+                    output_path
+                ]
         else:
-            logger.info("No background music path provided. Mapping English voice directly.")
-            # Discard the original background audio entirely
-            cmd = [
-                'ffmpeg', '-y',
-                '-i', video_path,
-                '-i', audio_path,
-                '-map', '0:v:0',
-                '-map', '1:a',
-                '-c:v', 'copy',
-                '-c:a', 'aac',
-                '-b:a', '192k',
-                output_path
-            ]
+            # Fallback if new BGM download/load failed
+            if is_sfx_separated:
+                logger.warning("New BGM missing. Mixing original SFX and English voice only...")
+                cmd = [
+                    'ffmpeg', '-y',
+                    '-i', video_path,
+                    '-i', bg_music_path,
+                    '-i', audio_path,
+                    '-filter_complex', '[1:a]volume=1.0[sfx];[2:a]volume=1.0[fg];[sfx][fg]amix=inputs=2:duration=first:dropout_transition=0[outa]',
+                    '-map', '0:v:0',
+                    '-map', '[outa]',
+                    '-c:v', 'copy',
+                    '-c:a', 'aac',
+                    '-b:a', '192k',
+                    output_path
+                ]
+            else:
+                logger.warning("No BGM and no SFX available. Mapping English voice directly.")
+                cmd = [
+                    'ffmpeg', '-y',
+                    '-i', video_path,
+                    '-i', audio_path,
+                    '-map', '0:v:0',
+                    '-map', '1:a',
+                    '-c:v', 'copy',
+                    '-c:a', 'aac',
+                    '-b:a', '192k',
+                    output_path
+                ]
 
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
 
