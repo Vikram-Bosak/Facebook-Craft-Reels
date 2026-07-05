@@ -1,6 +1,12 @@
 import os
 import json
 import asyncio
+import sys
+
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+except Exception:
+    pass
 from playwright.async_api import async_playwright
 from dotenv import load_dotenv
 
