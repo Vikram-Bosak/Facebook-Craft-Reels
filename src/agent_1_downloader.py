@@ -196,9 +196,85 @@ def is_9_16_ratio(video_path):
         print(f"Error checking aspect ratio: {e}")
         return False
 
+def scan_bilibili_craft_videos():
+    import urllib.parse
+    import requests
+    import re
+    
+    print("Scanning Bilibili DIY/Craft section for new videos...")
+    history = load_history()
+    queue = load_queue()
+    queued_ids = {item['id'] for item in queue}
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Referer": "https://www.bilibili.com/"
+    }
+    
+    new_candidates = []
+    kws = ["手工DIY", "创意手工", "折纸教程"]
+    for kw in kws:
+        try:
+            url = f"https://api.bilibili.com/x/web-interface/wbi/search/all/v2?keyword={urllib.parse.quote(kw)}"
+            r = requests.get(url, headers=headers, timeout=10)
+            if r.status_code == 200:
+                data = r.json()
+                if data.get('code') == 0:
+                    result = data.get('data', {}).get('result', [])
+                    video_result = None
+                    if isinstance(result, list):
+                        for item in result:
+                            if isinstance(item, dict) and item.get('result_type') == 'video':
+                                video_result = item
+                                break
+                    elif isinstance(result, dict):
+                        video_result = result.get('video')
+                        
+                    if video_result:
+                        data_list = video_result.get('data', [])
+                        for v in data_list:
+                            bvid = v.get('bvid')
+                            if not bvid:
+                                continue
+                            if bvid in history or bvid in queued_ids:
+                                continue
+                                
+                            duration_str = v.get('duration', '0:0')
+                            parts = duration_str.split(':')
+                            duration_sec = 0
+                            if len(parts) == 2:
+                                duration_sec = int(parts[0]) * 60 + int(parts[1])
+                            elif len(parts) == 3:
+                                duration_sec = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+                                
+                            # We only want short reels (<= 90 seconds)
+                            if duration_sec > 90 or duration_sec < 10:
+                                continue
+                                
+                            title = re.sub(r'<[^>]+>', '', v.get('title', ''))
+                            video_url = f"https://www.bilibili.com/video/{bvid}"
+                            
+                            new_candidates.append({
+                                "id": bvid,
+                                "title": title,
+                                "source_url": video_url,
+                                "status": "PENDING"
+                            })
+                            print(f"Discovered new Bilibili craft video: ID={bvid} | Title={title[:50]} | Duration={duration_str}")
+        except Exception as e:
+            print(f"Error scanning Bilibili for {kw}: {e}")
+            
+    if new_candidates:
+        queue.extend(new_candidates)
+        save_queue(queue)
+        print(f"Added {len(new_candidates)} new Bilibili videos to the queue.")
+    else:
+        print("No new unique Bilibili videos discovered in this scan.")
+
 def run_downloader():
     print("Running Downloader: Scanning and filling queue...")
     asyncio.run(scan_douyin_craft_videos())
+    scan_bilibili_craft_videos()
     
     # Loop to find the first PENDING video in the queue that has a 9:16 aspect ratio
     queue = load_queue()
@@ -212,32 +288,44 @@ def run_downloader():
         print(f"Next pending video: {item['title']} ({item['source_url']})")
         
         # Extract and download the video
-        video_url = asyncio.run(extract_douyin_video_url(item['source_url']))
-        if video_url:
-            local_path = os.path.abspath("workspace/raw_video.mp4")
-            if download_video_direct(video_url, local_path):
-                # Verify aspect ratio is 9:16
-                if is_9_16_ratio(local_path):
-                    item['local_path'] = local_path
-                    item['status'] = 'DOWNLOADED'
-                    item['download_status'] = 'Success'
-                    # Update status in queue
-                    for q_item in queue:
-                        if q_item['id'] == item['id']:
-                            q_item['status'] = 'DOWNLOADED'
-                    save_queue(queue)
-                    return item
-                else:
-                    print(f"Skipping video ID={item['id']} because aspect ratio is not 9:16.")
-                    item['status'] = 'SKIPPED_ASPECT_RATIO'
-                    item['download_status'] = 'Skipped (Not 9:16)'
-                    for q_item in queue:
-                        if q_item['id'] == item['id']:
-                            q_item['status'] = 'SKIPPED_ASPECT_RATIO'
-                    save_queue(queue)
-                    if os.path.exists(local_path):
-                        os.remove(local_path)
-                    continue  # try the next video in the queue
+        local_path = os.path.abspath("workspace/raw_video.mp4")
+        download_success = False
+        
+        if "bilibili.com" in item['source_url']:
+            print(f"Downloading Bilibili video: {item['source_url']}")
+            # Add sys.path to find download_bilibili
+            sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            from download_bilibili import download_bilibili_video
+            download_success = asyncio.run(download_bilibili_video(item['source_url'], local_path))
+        else:
+            print(f"Downloading Douyin video: {item['source_url']}")
+            video_url = asyncio.run(extract_douyin_video_url(item['source_url']))
+            if video_url:
+                download_success = download_video_direct(video_url, local_path)
+        
+        if download_success:
+            # Verify aspect ratio is 9:16
+            if is_9_16_ratio(local_path):
+                item['local_path'] = local_path
+                item['status'] = 'DOWNLOADED'
+                item['download_status'] = 'Success'
+                # Update status in queue
+                for q_item in queue:
+                    if q_item['id'] == item['id']:
+                        q_item['status'] = 'DOWNLOADED'
+                save_queue(queue)
+                return item
+            else:
+                print(f"Skipping video ID={item['id']} because aspect ratio is not 9:16.")
+                item['status'] = 'SKIPPED_ASPECT_RATIO'
+                item['download_status'] = 'Skipped (Not 9:16)'
+                for q_item in queue:
+                    if q_item['id'] == item['id']:
+                        q_item['status'] = 'SKIPPED_ASPECT_RATIO'
+                save_queue(queue)
+                if os.path.exists(local_path):
+                    os.remove(local_path)
+                continue  # try the next video in the queue
                     
         item['download_status'] = 'Failed'
         item['status'] = 'FAILED'
